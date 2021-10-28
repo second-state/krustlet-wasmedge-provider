@@ -41,8 +41,8 @@ rustls-tls = [
   "oci-distribution/rustls-tls",
 ]
 
-wasmtime = [ "wasi-provider/wasmtime" ]
-wasmedge = [ "wasi-provider/wasmedge-feature" ]
+wasmtime = [ "wasi-provider/wasmtime-feature" ]
+wasmedge = [ "wasi-provider/wasmedge" ]
 
 [dependencies]
 anyhow = "1.0"
