@@ -77,6 +77,10 @@ jobs:
           make CC=aarch64-linux-gnu-gcc
           sudo make install
           rustup target add aarch64-unknown-linux-gnu
+      - name: Install Wasmedge
+        run: |
+          wget https://github.com/WasmEdge/WasmEdge/releases/download/0.9.0-rc.2/WasmEdge-0.9.0-rc.2-ubuntu20.04_amd64.deb
+          sudo dpkg -i WasmEdge-0.9.0-rc.2-ubuntu20.04_amd64.deb
       - name: Build
         run: |
           just build ${{ matrix.config.args }}
