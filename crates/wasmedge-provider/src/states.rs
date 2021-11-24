@@ -9,7 +9,7 @@ macro_rules! transition_to_error {
         let aerr = anyhow::Error::from($err);
         tracing::error!(error = %aerr);
         let error_state =
-            kubelet::state::common::error::Error::<crate::WasiProvider>::new(aerr.to_string());
+            kubelet::state::common::error::Error::<crate::WasmedgeProvider>::new(aerr.to_string());
         return Transition::next($slf, error_state);
     }};
 }

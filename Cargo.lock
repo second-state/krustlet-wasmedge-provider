@@ -4136,18 +4136,15 @@ dependencies = [
  "tracing",
  "wasi-cap-std-sync",
  "wasi-common",
- "wasi-experimental-http-wasmtime",
  "wasmedge-sdk",
- "wasmtime",
- "wasmtime-wasi",
  "wat",
 ]
 
 [[package]]
 name = "wasmedge-sdk"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87c4a80aff120775a8ffa840587bda5e82aa9f9563f0821895466547ceb1a1c7"
+checksum = "2684f655ddb5ca9f3987593958e07f6b9d1ab70788876243a142c0482a70cba6"
 dependencies = [
  "anyhow",
  "thiserror",
@@ -4156,9 +4153,9 @@ dependencies = [
 
 [[package]]
 name = "wasmedge-sys"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84ddba3351622c219865c7e7762308ee610278cd0ce2e0fd447370ccc027f183"
+checksum = "231cb6b73e7e5c564473a94dcfca2ab628da6359bcf3aca18534d07cc495edfd"
 dependencies = [
  "bindgen",
  "paste",

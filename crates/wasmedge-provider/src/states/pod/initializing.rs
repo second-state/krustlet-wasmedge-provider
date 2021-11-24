@@ -16,7 +16,7 @@ use crate::{PodState, ProviderState};
 use super::starting::Starting;
 
 #[derive(Default, Debug, TransitionTo)]
-#[transition_to(Starting, Error<crate::WasiProvider>)]
+#[transition_to(Starting, Error<crate::WasmedgeProvider>)]
 pub struct Initializing;
 
 #[async_trait::async_trait]

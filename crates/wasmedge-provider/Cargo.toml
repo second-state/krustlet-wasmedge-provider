@@ -31,12 +31,7 @@ tokio = {version = "1.0", features = ["fs", "macros", "io-util", "sync"]}
 tracing = {version = "0.1", features = ['log']}
 wasi-cap-std-sync = "0.30"
 wasi-common = "0.30"
-wasmedge-sdk = "0.2.1"
-wat = "1.0.38"
-wasi-experimental-http-wasmtime = "0.6.0"
-
-wasmtime = "0.30"
-wasmtime-wasi = "0.30"
+wasmedge-sys = "0.2.1"
 
 [dev-dependencies]
 k8s-openapi = {version = "0.13", default-features = false, features = ["v1_22", "api"]}

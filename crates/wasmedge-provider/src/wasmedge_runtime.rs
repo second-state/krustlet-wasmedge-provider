@@ -1,31 +1,28 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use cap_std::ambient_authority;
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 use wasi_cap_std_sync::WasiCtxBuilder;
-use wasmtime::{InterruptHandle, Linker};
 
 use kubelet::container::Handle as ContainerHandle;
 use kubelet::container::Status;
 use kubelet::handle::StopHandler;
 
-use wasi_experimental_http_wasmtime::HttpCtx as WasiHttpCtx;
-
 pub struct Runtime {
     handle: JoinHandle<anyhow::Result<()>>,
-    interrupt_handle: InterruptHandle,
 }
 
 #[async_trait::async_trait]
 impl StopHandler for Runtime {
     async fn stop(&mut self) -> anyhow::Result<()> {
-        self.interrupt_handle.interrupt();
-        Ok(())
+        Err(anyhow::anyhow!(
+            "Currently, WasmEdge do not support interruput"
+        ))
     }
 
     async fn wait(&mut self) -> anyhow::Result<()> {
@@ -34,9 +31,9 @@ impl StopHandler for Runtime {
     }
 }
 
-/// WasiRuntime provides a WASI compatible runtime. A runtime should be used for
-/// each "instance" of a process and can be passed to a thread pool for running
-pub struct WasiRuntime {
+/// WasmedgeRuntime provides a WASI compatible runtime.
+/// A runtime should be used for each "instance" of a process.
+pub struct WasmedgeRuntime {
     /// name of the process
     name: String,
     /// Data needed for the runtime
@@ -45,8 +42,6 @@ pub struct WasiRuntime {
     output: Arc<NamedTempFile>,
     /// A channel to send status updates on the runtime
     status_sender: Sender<Status>,
-    /// Configuration for the WASI http
-    http_config: WasiHttpConfig,
 }
 
 // Configuration for WASI http.
@@ -81,8 +76,8 @@ impl kubelet::log::HandleFactory<tokio::fs::File> for HandleFactory {
     }
 }
 
-impl WasiRuntime {
-    /// Creates a new WasiRuntime
+impl WasmedgeRuntime {
+    /// Creates a new WasmedgeRuntime
     ///
     /// # Arguments
     ///
@@ -102,7 +97,7 @@ impl WasiRuntime {
         dirs: HashMap<PathBuf, Option<PathBuf>>,
         log_dir: L,
         status_sender: Sender<Status>,
-        http_config: WasiHttpConfig,
+        _http_config: WasiHttpConfig,
     ) -> anyhow::Result<Self> {
         let temp = tokio::task::spawn_blocking(move || -> anyhow::Result<NamedTempFile> {
             Ok(NamedTempFile::new_in(log_dir)?)
@@ -115,7 +110,7 @@ impl WasiRuntime {
         // think it necessary, we can make these permanent files with a cleanup
         // loop that runs elsewhere. These will get deleted when the reference
         // is dropped
-        Ok(WasiRuntime {
+        Ok(WasmedgeRuntime {
             name,
             data: Arc::new(Data {
                 module_data,
@@ -125,7 +120,6 @@ impl WasiRuntime {
             }),
             output: Arc::new(temp),
             status_sender,
-            http_config,
         })
     }
 
@@ -138,30 +132,24 @@ impl WasiRuntime {
         })
         .await??;
 
-        let (interrupt_handle, handle) = self
-            .spawn_wasmtime(tokio::fs::File::from_std(output_write))
+        let handle = self
+            .spawn_wasmedge(tokio::fs::File::from_std(output_write))
             .await?;
 
         let log_handle_factory = HandleFactory {
             temp: self.output.clone(),
         };
 
-        Ok(ContainerHandle::new(
-            Runtime {
-                handle,
-                interrupt_handle,
-            },
-            log_handle_factory,
-        ))
+        Ok(ContainerHandle::new(Runtime { handle }, log_handle_factory))
     }
 
-    // Spawns a running wasmtime instance with the given context and status
+    // Spawns a running wasmedge instance with the given context and status
     // channel.
     #[instrument(level = "info", skip(self, output_write), fields(name = %self.name))]
-    async fn spawn_wasmtime(
+    async fn spawn_wasmedge(
         &self,
         output_write: tokio::fs::File,
-    ) -> anyhow::Result<(InterruptHandle, JoinHandle<anyhow::Result<()>>)> {
+    ) -> anyhow::Result<JoinHandle<anyhow::Result<()>>> {
         // Clone the module data Arc so it can be moved
         let data = self.data.clone();
         let status_sender = self.status_sender.clone();
@@ -203,63 +191,7 @@ impl WasiRuntime {
             builder = builder.preopened_dir(preopen_dir, guest_dir)?;
         }
 
-        let ctx = builder.build();
-
-        let mut config = wasmtime::Config::new();
-        config.interruptable(true);
-        let engine = wasmtime::Engine::new(&config)?;
-        let mut store = wasmtime::Store::new(&engine, ctx);
-        let interrupt = store.interrupt_handle()?;
-
-        let mut linker = Linker::new(&engine);
-
-        let module = match wasmtime::Module::new(&engine, &data.module_data) {
-            // We can't map errors here or it moves the send channel, so we
-            // do it in a match
-            Ok(m) => m,
-            Err(e) => {
-                let message = "unable to create module";
-                error!(error = %e, "{}", message);
-                status_sender
-                    .send(Status::Terminated {
-                        failed: true,
-                        message: message.into(),
-                        timestamp: chrono::Utc::now(),
-                    })
-                    .await?;
-
-                return Err(anyhow::anyhow!("{}: {}", message, e));
-            }
-        };
-
-        wasmtime_wasi::add_to_linker(&mut linker, |cx| cx)?;
-
-        // Link WASI HTTP
-        let WasiHttpConfig {
-            allowed_domains,
-            max_concurrent_requests,
-        } = self.http_config.clone();
-        let wasi_http = WasiHttpCtx::new(allowed_domains, max_concurrent_requests)?;
-        wasi_http.add_to_linker(&mut linker)?;
-
-        let instance = match linker.instantiate(&mut store, &module) {
-            // We can't map errors here or it moves the send channel, so we
-            // do it in a match
-            Ok(i) => i,
-            Err(e) => {
-                let message = "unable to instantiate module";
-                error!(error = %e, "{}", message);
-                status_sender
-                    .send(Status::Terminated {
-                        failed: true,
-                        message: message.into(),
-                        timestamp: chrono::Utc::now(),
-                    })
-                    .await?;
-                // Converting from anyhow
-                return Err(anyhow::anyhow!("{}: {}", message, e));
-            }
-        };
+        let _ctx = builder.build();
 
         info!("starting run of module");
         status_sender
@@ -268,58 +200,10 @@ impl WasiRuntime {
             })
             .await?;
 
-        // NOTE(thomastaylor312): In the future, if we want to pass args directly, we'll
-        // need to do a bit more to pass them in here.
-        let export = instance
-            .get_export(&mut store, "_start")
-            .ok_or_else(|| anyhow::anyhow!("_start import doesn't exist in wasm module"))?;
-
-        // NOTE(thomastaylor312): In the future (pun intended) we might be able to use something
-        // like `func.call(...).await`. We should check every once and a while when upgraing
-        // wasmtime
-        let func = match export {
-            wasmtime::Extern::Func(f) => f,
-            _ => {
-                let message =
-                    "_start import was not a function. This is likely a problem with the module";
-                error!(error = message);
-                status_sender
-                    .send(Status::Terminated {
-                        failed: true,
-                        message: message.into(),
-                        timestamp: chrono::Utc::now(),
-                    })
-                    .await?;
-
-                return Err(anyhow::anyhow!(message));
-            }
-        };
-
         let name = self.name.clone();
         let handle = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
             let span = tracing::info_span!("wasmtime_module_run", %name);
             let _enter = span.enter();
-
-            match func.call(&mut store, &[]) {
-                // We can't map errors here or it moves the send channel, so we
-                // do it in a match
-                Ok(_) => {}
-                Err(e) => {
-                    let message = "unable to run module";
-                    error!(error = %e, "{}", message);
-                    send(
-                        &status_sender,
-                        &name,
-                        Status::Terminated {
-                            failed: true,
-                            message: message.into(),
-                            timestamp: chrono::Utc::now(),
-                        },
-                    );
-
-                    return Err(anyhow::anyhow!("{}: {}", message, e));
-                }
-            };
 
             info!("module run complete");
             send(
@@ -333,8 +217,7 @@ impl WasiRuntime {
             );
             Ok(())
         });
-        // Wait for the interrupt to be sent back to us
-        Ok((interrupt, handle))
+        Ok(handle)
     }
 }
 

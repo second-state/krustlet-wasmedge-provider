@@ -2,7 +2,7 @@
 
 #![deny(missing_docs)]
 
-mod wasi_runtime;
+mod wasmedge_runtime;
 
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -24,7 +24,7 @@ use kubelet::state::common::{GenericProvider, GenericProviderState};
 use kubelet::store::Store;
 use kubelet::volume::VolumeRef;
 use tokio::sync::RwLock;
-use wasi_runtime::Runtime;
+use wasmedge_runtime::Runtime;
 
 mod states;
 use kubelet::node;
@@ -34,14 +34,15 @@ const TARGET_WASM32_WASI: &str = "wasm32-wasi";
 const LOG_DIR_NAME: &str = "wasi-logs";
 const VOLUME_DIR: &str = "volumes";
 
-/// WasiProvider provides a Kubelet runtime implementation that executes WASM
+/// WasmedgeProvider provides a Kubelet runtime implementation that executes WASM
 /// binaries conforming to the WASI spec.
 #[derive(Clone)]
-pub struct WasiProvider {
+pub struct WasmedgeProvider {
     shared: ProviderState,
 }
 
-type PodHandleMap = Arc<RwLock<HashMap<PodKey, Arc<Handle<Runtime, wasi_runtime::HandleFactory>>>>>;
+type PodHandleMap =
+    Arc<RwLock<HashMap<PodKey, Arc<Handle<Runtime, wasmedge_runtime::HandleFactory>>>>>;
 
 /// Provider-level state shared between all pods
 #[derive(Clone)]
@@ -92,7 +93,7 @@ impl DevicePluginSupport for ProviderState {
     }
 }
 
-impl WasiProvider {
+impl WasmedgeProvider {
     /// Create a new wasi provider from a module store and a kubelet config
     pub async fn new(
         store: Arc<dyn Store + Sync + Send>,
@@ -127,7 +128,7 @@ struct ModuleRunContext {
 }
 
 #[async_trait::async_trait]
-impl Provider for WasiProvider {
+impl Provider for WasmedgeProvider {
     type ProviderState = ProviderState;
     type InitialState = Registered<Self>;
     type TerminatedState = Terminated<Self>;
@@ -140,7 +141,7 @@ impl Provider for WasiProvider {
     }
 
     async fn node(&self, builder: &mut Builder) -> anyhow::Result<()> {
-        builder.set_architecture("wasm-wasi");
+        builder.set_architecture("wasm32-wasmedge-wasi");
         builder.add_taint("NoSchedule", "kubernetes.io/arch", Self::ARCH);
         builder.add_taint("NoExecute", "kubernetes.io/arch", Self::ARCH);
         Ok(())
@@ -173,7 +174,7 @@ impl Provider for WasiProvider {
     }
 }
 
-impl GenericProvider for WasiProvider {
+impl GenericProvider for WasmedgeProvider {
     type ProviderState = ProviderState;
     type PodState = PodState;
     type RunState = crate::states::pod::initializing::Initializing;

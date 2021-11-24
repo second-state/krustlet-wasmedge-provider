@@ -10,7 +10,7 @@ use crate::{PodState, ProviderState};
 
 /// The Kubelet is running the Pod.
 #[derive(Debug, TransitionTo)]
-#[transition_to(Completed, Error<crate::WasiProvider>)]
+#[transition_to(Completed, Error<crate::WasmedgeProvider>)]
 pub struct Running {
     rx: Receiver<anyhow::Result<()>>,
 }

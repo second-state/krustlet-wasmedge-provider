@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use kubelet::pod::{Handle as PodHandle, PodKey};
 use kubelet::state::common::GenericProviderState;
 use kubelet::volume::VolumeRef;
 
-use crate::wasi_runtime::{WasiHttpConfig, WasiRuntime};
+use crate::wasmedge_runtime::{WasiHttpConfig, WasmedgeRuntime};
 use crate::ProviderState;
 
 use super::running::Running;
@@ -216,7 +217,7 @@ impl State<ContainerState> for Waiting {
         }
 
         // TODO: decide how/what it means to propagate annotations (from run_context) into WASM modules.
-        let runtime = match WasiRuntime::new(
+        let runtime = match WasmedgeRuntime::new(
             name,
             module_data,
             env,
