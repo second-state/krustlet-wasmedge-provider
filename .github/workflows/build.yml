@@ -85,30 +85,30 @@ jobs:
         run: |
           just build ${{ matrix.config.args }}
           just test
-  windows-build:
-    runs-on: windows-latest
-    defaults:
-      run:
-        # For some reason, running with the default powershell doesn't work with the `Build` step,
-        # but bash does!
-        shell: bash
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install latest Rust stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          default: true
-          components: clippy, rustfmt
-      - uses: engineerd/configurator@v0.0.5
-        with:
-          name: just
-          url: "https://github.com/casey/just/releases/download/0.10.2/just-0.10.2-x86_64-pc-windows-msvc.zip"
-          pathInArchive: just.exe
-      - name: Build
-        run: |
-          just --justfile justfile-windows build
-          just --justfile justfile-windows test
+  # windows-build:
+  #   runs-on: windows-latest
+  #   defaults:
+  #     run:
+  #       # For some reason, running with the default powershell doesn't work with the `Build` step,
+  #       # but bash does!
+  #       shell: bash
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - name: Install latest Rust stable toolchain
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         default: true
+  #         components: clippy, rustfmt
+  #     - uses: engineerd/configurator@v0.0.5
+  #       with:
+  #         name: just
+  #         url: "https://github.com/casey/just/releases/download/0.10.2/just-0.10.2-x86_64-pc-windows-msvc.zip"
+  #         pathInArchive: just.exe
+  #     - name: Build
+  #       run: |
+  #         just --justfile justfile-windows build
+  #         just --justfile justfile-windows test
   # windows-e2e:
   #   env:
   #     # Because we are on a shared build machine, we need to use a different directory than the default homedir
