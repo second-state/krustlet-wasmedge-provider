@@ -3,15 +3,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, instrument, trace, warn};
 
-use cap_std::ambient_authority;
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
-use wasi_cap_std_sync::WasiCtxBuilder;
 
 use kubelet::container::Handle as ContainerHandle;
 use kubelet::container::Status;
 use kubelet::handle::StopHandler;
+
+use wasmedge_sys::{vm::Vm, Config, ImportObj, Module};
 
 pub struct Runtime {
     handle: JoinHandle<anyhow::Result<()>>,
@@ -145,10 +145,10 @@ impl WasmedgeRuntime {
 
     // Spawns a running wasmedge instance with the given context and status
     // channel.
-    #[instrument(level = "info", skip(self, output_write), fields(name = %self.name))]
+    #[instrument(level = "info", skip(self, _output_write), fields(name = %self.name))]
     async fn spawn_wasmedge(
         &self,
-        output_write: tokio::fs::File,
+        _output_write: tokio::fs::File,
     ) -> anyhow::Result<JoinHandle<anyhow::Result<()>>> {
         // Clone the module data Arc so it can be moved
         let data = self.data.clone();
@@ -156,61 +156,61 @@ impl WasmedgeRuntime {
 
         // Log this info here so it isn't on _every_ log line
         trace!(env = ?data.env, args = ?data.args, dirs = ?data.dirs, "Starting setup of wasmtime module");
-        let env: Vec<(String, String)> = data
-            .env
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        let stdout = wasi_cap_std_sync::file::File::from_cap_std(cap_std::fs::File::from_std(
-            output_write.try_clone().await?.into_std().await,
-            ambient_authority(),
-        ));
-        let stderr = wasi_cap_std_sync::file::File::from_cap_std(cap_std::fs::File::from_std(
-            output_write.try_clone().await?.into_std().await,
-            ambient_authority(),
-        ));
-
-        // Create the WASI context builder and pass arguments, environment,
-        // and standard output and error.
-        let mut builder = WasiCtxBuilder::new()
-            .args(&data.args)?
-            .envs(&env)?
-            .stdout(Box::new(stdout))
-            .stderr(Box::new(stderr));
-
-        // Add preopen dirs.
-        for (key, value) in data.dirs.iter() {
-            let guest_dir = value.as_ref().unwrap_or(key);
-            debug!(
-                hostpath = %key.display(),
-                guestpath = %guest_dir.display(),
-                "mounting hostpath in modules"
-            );
-            let preopen_dir = cap_std::fs::Dir::open_ambient_dir(key, ambient_authority())?;
-
-            builder = builder.preopened_dir(preopen_dir, guest_dir)?;
-        }
-
-        let _ctx = builder.build();
-
-        info!("starting run of module");
-        status_sender
-            .send(Status::Running {
-                timestamp: chrono::Utc::now(),
-            })
-            .await?;
 
         let name = self.name.clone();
+        let module_data = data.module_data.clone();
+
         let handle = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
-            let span = tracing::info_span!("wasmtime_module_run", %name);
+            let span = tracing::info_span!("wasmedge_vm_run", %name);
             let _enter = span.enter();
+
+            let envs: Vec<String> = data
+                .env
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect();
+
+            // Note:
+            // currently the Wasmedge VM is not thread safe, so we create VM in each thread.
+            //
+            // TODO:
+            // There are two important feature to refactor this and reuse VM
+            // One is implement Sync, Send for VM
+            // The other is implement wasi unload and reload for VM
+            let config = Config::default();
+
+            let import_obj = ImportObj::create_wasi(
+                Vec::<String>::with_capacity(0),
+                envs,
+                Vec::<String>::with_capacity(0),
+            );
+            let module = Module::load_from_buffer(&config, module_data).map_err(|e| {
+                anyhow::anyhow!("Wasmedge load buffer to wasm module fail: {:?}", e)
+            })?;
+
+            // TODO
+            // handle stdout, stderr here
+            let mut vm = Vm::create(&config)
+                .register_module_from_import(import_obj)
+                .map_err(|e| anyhow::anyhow!("Wasmedge import wasi fail: {:?}", e))?
+                .load_wasm_from_ast_module(&module)
+                .map_err(|e| anyhow::anyhow!("Wasmedge vm load module fail: {:?}", e))?
+                .validate()
+                .map_err(|e| anyhow::anyhow!("Wasmedge validate fail: {:?}", e))?
+                .instantiate()
+                .map_err(|e| anyhow::anyhow!("Wasmedge instantiate fail: {:?}", e))?;
+
+            let params = vec![];
+            let result = vm
+                .run("_start", &params)
+                .map_err(|e| anyhow::anyhow!("Wasmedge vm run fail: {:?}", e));
 
             info!("module run complete");
             send(
                 &status_sender,
                 &name,
                 Status::Terminated {
-                    failed: false,
+                    failed: result.is_err(), // GetExitCode
                     message: "Module run completed".into(),
                     timestamp: chrono::Utc::now(),
                 },

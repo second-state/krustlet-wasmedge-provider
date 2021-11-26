@@ -6,7 +6,7 @@ use kubelet::store::oci::FileStore;
 use kubelet::Kubelet;
 use std::convert::TryFrom;
 use std::sync::Arc;
-#[cfg(feature = "wasmtime")]
+#[cfg(all(feature = "wasmtime", not(feature = "wasmedge")))]
 use wasi_provider::WasiProvider;
 #[cfg(feature = "wasmedge")]
 use wasmedge_provider::WasmedgeProvider;

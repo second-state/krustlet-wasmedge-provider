@@ -29,9 +29,7 @@ serde_json = "1.0"
 tempfile = "3.1"
 tokio = {version = "1.0", features = ["fs", "macros", "io-util", "sync"]}
 tracing = {version = "0.1", features = ['log']}
-wasi-cap-std-sync = "0.30"
-wasi-common = "0.30"
-wasmedge-sys = "0.2.1"
+wasmedge-sys = { git = "https://github.com/WasmEdge/WasmEdge.git", rev="55653c0a8f7f02cef03acda1869c780e5b9adbf8", default-features = false, features = ["standalone"] }
 
 [dev-dependencies]
 k8s-openapi = {version = "0.13", default-features = false, features = ["v1_22", "api"]}
