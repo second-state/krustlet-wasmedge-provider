@@ -7,6 +7,8 @@ provisioner_path := csi_binaries_path + "csi-provisioner"
 
 # For backward compatibility with those running `just run-wasi`
 run-wasi: run
+run-wasmedge: bootstrap
+    KUBECONFIG=$(eval echo $CONFIG_DIR)/kubeconfig-wasi cargo run --bin krustlet-wasi --features=wasmedge -- --node-name krustlet-wasi --port 3001 --bootstrap-file $(eval echo $CONFIG_DIR)/bootstrap.conf --cert-file $(eval echo $CONFIG_DIR)/krustlet-wasi.crt --private-key-file $(eval echo $CONFIG_DIR)/krustlet-wasi.key
 
 build +FLAGS='':
     cargo build {{FLAGS}}

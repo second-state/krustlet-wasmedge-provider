@@ -6,7 +6,10 @@ use kubelet::store::oci::FileStore;
 use kubelet::Kubelet;
 use std::convert::TryFrom;
 use std::sync::Arc;
+#[cfg(all(feature = "wasmtime", not(feature = "wasmedge")))]
 use wasi_provider::WasiProvider;
+#[cfg(feature = "wasmedge")]
+use wasmedge_provider::WasmedgeProvider;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -30,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
         &config.node_name,
     ));
 
+    #[cfg(not(feature = "wasmedge"))]
     let provider = WasiProvider::new(
         store,
         &config,
@@ -38,6 +42,17 @@ async fn main() -> anyhow::Result<()> {
         device_plugin_manager,
     )
     .await?;
+
+    #[cfg(feature = "wasmedge")]
+    let provider = WasmedgeProvider::new(
+        store,
+        &config,
+        kubeconfig.clone(),
+        plugin_registry,
+        device_plugin_manager,
+    )
+    .await?;
+
     let kubelet = Kubelet::new(provider, kubeconfig, config).await?;
     kubelet.start().await
 }
