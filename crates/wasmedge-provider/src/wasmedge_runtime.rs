@@ -177,23 +177,24 @@ impl WasmedgeRuntime {
             // There are two important feature to refactor this and reuse VM
             // One is implement Sync, Send for VM
             // The other is implement wasi unload and reload for VM
-            let config = Config::default();
+            let config = Config::create()
+                .map_err(|e| anyhow::anyhow!("wasmedge config create fail: {:?}", e))?;
 
-            let import_obj = ImportObj::create_wasi(
-                Vec::<String>::with_capacity(0),
-                envs,
-                Vec::<String>::with_capacity(0),
-            );
-            let module = Module::load_from_buffer(&config, module_data).map_err(|e| {
+            let import_obj =
+                ImportObj::create_wasi(None, Some(envs.iter()), None).map_err(|e| {
+                    anyhow::anyhow!("Wasmedge load buffer to wasm module fail: {:?}", e)
+                })?;
+            let mut module = Module::load_from_buffer(&config, &module_data).map_err(|e| {
                 anyhow::anyhow!("Wasmedge load buffer to wasm module fail: {:?}", e)
             })?;
 
             // TODO
             // handle stdout, stderr here
-            let mut vm = Vm::create(&config)
+            let mut vm = Vm::create(Some(&config), None)
+                .expect("Wasmedge create fail")
                 .register_module_from_import(import_obj)
                 .map_err(|e| anyhow::anyhow!("Wasmedge import wasi fail: {:?}", e))?
-                .load_wasm_from_ast_module(&module)
+                .load_wasm_from_ast_module(&mut module)
                 .map_err(|e| anyhow::anyhow!("Wasmedge vm load module fail: {:?}", e))?
                 .validate()
                 .map_err(|e| anyhow::anyhow!("Wasmedge validate fail: {:?}", e))?
